@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 import logging
@@ -14,7 +15,21 @@ class Canvas():
                      'image_index' : 0}
         
         self.original = {'bgr' : None,
-                         'rgb' : None}
+                         'rgb' : None,
+                         'hsv' : None}
+        
+        # Get current positions of all trackbars
+        self.hMin = 0
+        self.sMin = 0
+        self.vMin = 0
+        self.hMax = 179
+        self.sMax = 255
+        self.vMax = 255
+
+        # Set minimum and maximum HSV values to display
+        self.lower = np.array([self.hMin, self.sMin, self.vMin])
+        self.upper = np.array([self.hMax, self.sMax, self.vMax])
+        
         
         self.image = None
 
@@ -123,7 +138,7 @@ class Canvas():
         logging.info('Canvas: before image.')
         self.path['image_index'] = (self.path['image_index'] - 1) % len(self.path['files'])
         self.setting_image_path(method = 'index')
-        self.setting_background(method = 'path')
+        self.setting_original(method = 'path')
         self.original2image()
     
     
@@ -157,12 +172,63 @@ class Canvas():
         else:
             return self.image[:,:,::-1]
             
-
+        
+    def save_image(self, name='output.jpg'):
+        root_path = './'
+        cv2.imwrite( root_path + name, self.image)
+        
+        
+        
+    def deal_hsv2image(self):
+        cv2.namedWindow('select_hsv', 0)
+        cv2.setMouseCallback("select_hsv", self.getposHsv)
+        
+        self.point_break = False
+        while True:
+            cv2.imshow("select_hsv", self.original['bgr'])
+            
+            if self.point_break:
+                break
+            elif cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+                
+        cv2.destroyWindow('select_hsv')
     
-        
-        
-        
+    def getposHsv(self, event, x, y, flags, param):
+        if event==cv2.EVENT_LBUTTONDOWN:
+            _hsv = self.original['hsv'][y, x]
+            
+            self.hMin = max(_hsv[0] - 5, 0)
+            self.sMin = max(_hsv[1] - 100, 0)
+            self.vMin = max(_hsv[2] - 100, 0)
+            self.hMax = min(_hsv[0] + 5, 179)
+            self.sMax = min(_hsv[1] + 100, 255)
+            self.vMax = min(_hsv[2] + 100, 255)
 
+            self.lower = np.array([self.hMin, self.sMin, self.vMin])
+            self.upper = np.array([self.hMax, self.sMax, self.vMax])
+            
+            mask = cv2.inRange(self.original['hsv'], self.lower, self.upper)
+            self.image = cv2.bitwise_and(self.original['bgr'], self.original['bgr'], mask=mask)
+            
+            self.point_break = True
+            
+            
+    def deal_bdd2image(self):
+        cv2.namedWindow('select_bdd', 0)
+        
+        rect = cv2.selectROI("select_bdd", self.original['bgr'], showCrosshair=True, fromCenter=False)
+        shape = self.original['bgr'].shape
+        
+        mask = np.zeros(shape[:2], np.uint8)
+        bgdModel = np.zeros((1,65), np.float64)
+        fgdModel = np.zeros((1,65), np.float64)
+        cv2.grabCut(self.original['bgr'], mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        mask2 = np.where((mask==2)|(mask==0),0,1).astype('uint8')
+        
+        self.image = self.original['bgr']*mask2[:,:,np.newaxis]
+        
+        cv2.destroyWindow('select_bdd')
             
     
     
